@@ -1,8 +1,8 @@
 # =============================================================================
 # Multiverse Analysis with Strategus
 # =============================================================================
-
-renv::restore()
+# renv::snapshot()
+ renv::restore()
 
 # =============================================================================
 # Define Database and Cohorts
@@ -26,6 +26,7 @@ cohortDefinitionSharedResource <- cgModule$createCohortSharedResourceSpecificati
 # =============================================================================
 
 covs2exclude <- c(1118084, 1124300)
+
 covSettings <- FeatureExtraction::createDefaultCovariateSettings(
   excludedCovariateConceptIds = covs2exclude,
   addDescendantsToExclude = TRUE
@@ -283,7 +284,7 @@ Eunomia::createCohorts(connectionDetails,
 # =============================================================================
 # Execution Settings
 # =============================================================================
-setwd("C:/Users/MarioLawes/Desktop")
+# setwd("C:/Users/MarioLawes/Desktop")
 outputFolder <- file.path(getwd(), "resultsFolder")
 # Delete existing folder and recreate fresh
 unlink(outputFolder, recursive = TRUE)
@@ -298,6 +299,11 @@ executionSettings <- Strategus::createCdmExecutionSettings(
   minCellCount       = 5
 )
 
+ParallelLogger::saveSettingsToJson(
+  analysisSpecifications,
+  file.path(outputFolder, "analysisSpecification.json")
+)
+
 # =============================================================================
 # Execute
 # =============================================================================
@@ -307,3 +313,4 @@ Strategus::execute(
   executionSettings,
   connectionDetails
 )
+
