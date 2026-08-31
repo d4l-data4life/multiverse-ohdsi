@@ -1,10 +1,8 @@
-.Rproj.user
+.Rproj.user/
 .Rhistory
 .RData
 .Ruserdata
 .Rprofile
-.gitignore
-renv
 1_runMultiverseAnalysis_d2e.ipynb
 2 - extractResults_visualizeOLD.R
 strategusMultiverse_0.1.2.tar.gz
