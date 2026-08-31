@@ -1,6 +1,6 @@
 # Multiverse analysis for OHDSI
 
-This repository contains template code for conducting a multiverse analysis with
+This repo contains template code to conduct a multiverse analysis using the
 [Strategus](https://github.com/OHDSI/Strategus) and the
 [HADES](https://ohdsi.github.io/Hades/) toolchain.
 
@@ -16,24 +16,35 @@ propensity score adjustment (Suchard et al., 2013), negative control outcomes wi
 empirical calibration (Schuemie et al., 2018), and pre-specified diagnostics that gate
 whether an estimate may be unblinded (Conover et al., 2025).
 
-Harmonising the data and the tooling removes variability in implementation of real world evidence studies, and best
-practice settles many design questions. However, it does not settle all of them. How long a washout period should be, whether to match,
-stratify, or weight on the propensity score, how wide a caliper to set, how many strata
-to use, whether to trim or truncate extreme weights — guidance favours no single option,
-yet each can move the estimate.
-
-Multiverse analysis addresses precisely this (Steegen et al., 2016). Instead of reporting
-one pipeline, the analyst defines all defensible alternatives, executes them,
+Harmonising the data and the tooling removes variability in the implementation of
+real-world evidence studies, and best practice settles many design questions. However, it does not
+settle all of them. How long a washout period should be, whether to match, stratify, or
+weight on the propensity score, how wide a caliper to set, how many strata to use, whether
+to trim or truncate extreme weights — guidance favours no single option, yet each can move
+the estimate. Multiverse analysis addresses precisely this (Steegen et al., 2016): instead
+of reporting one pipeline, the analyst defines all defensible alternatives, executes them,
 and reports the distribution of findings. Related approaches include specification curve
 analysis (Simonsohn et al., 2020) and, from epidemiology, vibration of effects
 (Patel et al., 2015; Vinatier et al., 2025).
 
-Building on OHDSI methodology, we propose a structured framework for multiverse analysis in large-scale RWE and 
-give guidance on how to interpret the resulting distribution of estimates.
+Importantly, multiverse analysis is not a single method. Recent work distinguishes three purposes with
+different purposes (Lemster et al., 2026): a confirmatory multiverse restricts itself
+to a small set of specifications targeting a precisely defined estimand and draws an
+inferential conclusion with adjustment for multiplicity; an exploratory multiverse admits
+a broader but still defensible set, foregoes formal inference, and serves robustness
+assessment and hypothesis generation; a meta-research multiverse takes the research
+process rather than the clinical question as its object, and is the only variant in which
+specifications that are not equally defensible may legitimately be included, precisely
+because researchers demonstrably use them. So framed, multiverse analysis complements
+rather than duplicates existing large-scale evidence generation in OHDSI: programmes such
+as LEGEND vary the question across many exposure–comparator–outcome triplets and databases
+while holding the design close to fixed (Suchard et al., 2019), whereas a multiverse varies
+the design while holding the question fixed. 
+
 ## Illustrative example
 
-For demonstration purposes the template runs against the synthetic
-[Eunomia](https://github.com/OHDSI/Eunomia) GiBleed CDM.
+For demo purposes we run it against the synthetic
+[Eunomia](https://github.com/OHDSI/Eunomia) GiBleed demo CDM.
 
 | | |
 |---|---|
@@ -45,8 +56,8 @@ For demonstration purposes the template runs against the synthetic
 | **Outcome model** | Cox proportional hazards |
 | **Risk window** | Days 1–280, anchored on cohort start |
 
-Covariates for the two exposure ingredients, and their descendants, are excluded from the
-propensity model.
+Covariates for the two exposure ingredients (and their descendants) are excluded from
+the propensity model.
 
 ### Specification space
 
@@ -89,6 +100,11 @@ resultsFolder/
 
 ## Requirements
 
+R (≥ 4.2) with:
+
+- `Strategus`, `CohortGenerator`, `CohortMethod`, `FeatureExtraction`, `Eunomia`
+- `dplyr`, `ggplot2`, `patchwork`, `ggh4x`, `purrr`, `tibble`, `tidyr`, `jsonlite`, `glue`
+
 `renv` is used for dependency pinning; restore the recorded library with:
 
 ```r
@@ -110,10 +126,10 @@ The first script downloads and instantiates the Eunomia CDM, creates the demo co
 and calls `Strategus::execute()`. Runtime is a few minutes on the demo data.
 
 The second script recovers the varied arguments by parsing the `definition` JSON column
-of `cm_analysis.csv`. The specifications are read back out of the executed artefacts
-rather than re-declared, so the plot cannot drift from what was actually run. Output is a
-two-panel specification curve: ranked estimates with 95% CIs on top, and the corresponding
-specification grid below, faceted by argument family.
+of `cm_analysis.csv` — the specifications are read back out of the executed artefacts
+rather than re-declared, so the plot cannot drift from what was actually run. Output is
+a two-panel specification curve: ranked estimates with 95% CIs on top, and the
+corresponding specification grid below, faceted by argument family.
 
 ## Citation
 
@@ -131,6 +147,15 @@ doi:[10.1093/jamia/ocae317](https://doi.org/10.1093/jamia/ocae317)
 Hripcsak G, Duke JD, Shah NH, et al. Observational Health Data Sciences and Informatics
 (OHDSI): opportunities for observational researchers. *Studies in Health Technology and
 Informatics*. 2015;216:574–578.
+
+Lemster S, Bonneville EF, Castro CAP, Columbus A, Dunkler D, Schmidt CO, Hothorn A,
+Hoffmann S, Boulesteix A-L. Multiverse-style analyses for confirmatory, exploratory, and
+meta-research purposes: design, execution, and interpretation. 2026. Preprint.
+<https://www.ibe.med.uni-muenchen.de/mitarbeiter/mitarbeiter/simon-lemster/preprint_multiverse.pdf>
+
+Levitt M, Zonta F, Ioannidis JPA. Excess death estimates from multiverse analysis in
+2009–2021. *European Journal of Epidemiology*. 2023;38(11):1129–1139.
+doi:[10.1007/s10654-023-00998-2](https://doi.org/10.1007/s10654-023-00998-2)
 
 Observational Health Data Sciences and Informatics. *HADES: Health Analytics
 Data-to-Evidence Suite.* <https://ohdsi.github.io/Hades/>
@@ -157,6 +182,11 @@ Suchard MA, Simpson SE, Zorych I, Ryan P, Madigan D. Massive parallelization of 
 inference algorithms for a complex generalized linear model. *ACM Transactions on
 Modeling and Computer Simulation*. 2013;23(1):10.
 doi:[10.1145/2414416.2414791](https://doi.org/10.1145/2414416.2414791)
+
+Suchard MA, Schuemie MJ, Krumholz HM, et al. Comprehensive comparative effectiveness and
+safety of first-line antihypertensive drug classes: a systematic, multinational,
+large-scale analysis. *The Lancet*. 2019;394(10211):1816–1827.
+doi:[10.1016/S0140-6736(19)32317-7](https://doi.org/10.1016/S0140-6736(19)32317-7)
 
 Vinatier C, Hoffmann S, Patel C, et al. What is the vibration of effects? *BMJ
 Evidence-Based Medicine*. 2025;30(1):e112747.
