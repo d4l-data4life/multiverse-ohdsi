@@ -1,17 +1,16 @@
-#install.packages("strategusMultiverse_0.1.2.tar.gz", repos = NULL, type = "source")
-library(strategusMultiverse)
+source("FUNS_multiverseOHDSI.R")
 
-resultsPath <- "../resultsFolder/results_folder"
-mv <- readStrategusMultiverse(resultsPath)
-mv
+mv <- readMultiverse("../resultsFolder/results_folder")
 
+inspectMultiverseSpec(mv)
 
-multiverse(resultsPath, type = "specification_curve")
-multiverse(resultsPath, type = "multiverse")
-multiverse(resultsPath, type = "density")
-multiverse(resultsPath, type = "volcano")
-multiverse(resultsPath, type = "influence")
-multiverse(resultsPath, type = "gate")
-multiverse(resultsPath, type = "shiny")
+createSpecificationCurve(mv,
+                         decisions = c("PS adjustment"  = "psAdjustment",
+                                       "Washout (days)" = "createStudyPopArgs.washoutPeriod",
+                                       "Caliper"        = "matchOnPsArgs.caliper",
+                                       "Match ratio"    = "matchOnPsArgs.maxRatio",
+                                       "PS strata"      = "stratifyByPsArgs.numberOfStrata",
+                                       "Trim fraction"  = "trimByPsArgs.trimFraction",
+                                       "Max weight"     = "truncateIptwArgs.maxWeight"))
 
-# specification_curve, multiverse, density, volcano, influence, gate, shiny
+createVolcanoPlot(mv, colourBy = c("PS adjustment" = "psAdjustment"))
