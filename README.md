@@ -41,6 +41,9 @@ as LEGEND vary the question across many exposure–comparator–outcome triplets
 while holding the design close to fixed (Suchard et al., 2019), whereas a multiverse varies
 the design while holding the question fixed. 
 
+Building on OHDSI methodology, we propose a structured framework for multiverse analysis in 
+large-scale RWE and give guidance on how to interpret the resulting distribution of estimates.
+
 ## Illustrative example
 
 For demo purposes we run it against the synthetic
