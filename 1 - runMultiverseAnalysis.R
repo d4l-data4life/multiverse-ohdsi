@@ -4,20 +4,18 @@
 # Purpose:   Illustrative multiverse analysis example using the Eunomia GiBleed
 #            demo CDM.
 #
-# Estimand:  Effect of new use of DICLOFENAC (target, cohort 2) relative to new
-#            use of CELECOXIB (comparator, cohort 1) on incident GI BLEED
-#            (outcome, cohort 3), on-treatment-agnostic fixed risk window,
-#            ATT scale throughout.
-#            NB: this is the reverse of the CohortMethod vignette direction.
+# Estimand:  Effect of new use of CELECOXIB (target, cohort 1) relative to new
+#            use of DICLOFENAC (comparator, cohort 2) on incident GI BLEED
+#            (outcome, cohort 3), fixed risk window, ATT scale throughout.
 #
 # Multiverse declaration (42 specifications):
 #     matching        caliper {0.2, 0.0001} x maxRatio {1, 10}        ->  4
 #     stratification  numberOfStrata {4, 5, 6, 7, 8, 9}               ->  6
 #     IPTW            trim {0, 1%} x truncation {none, maxWeight 10}  ->  4
-#   Washout period    {0, 90, 180} days                               ->  x3
+#   Risk window end   {30, 60, 90} days                               ->  x3
 #
 # HELD FIXED (each a researcher degree of freedom NOT explored here):
-#   riskWindowStart = 1, riskWindowEnd = 280, both anchored at cohort start
+#   washoutPeriod = 180, riskWindowStart = 1, both anchors at cohort start
 #   removeDuplicateSubjects = "remove all"
 #   removeSubjectsWithPriorOutcome = TRUE
 #   covariates = FeatureExtraction defaults, excluding 1118084 (diclofenac)
@@ -42,12 +40,12 @@
 # machine; re-run after any renv::snapshot(). HADES packages are version-
 # sensitive, so results are only reproducible against this lockfile.
 
-
-#download.file(
+# download.file(
 #  "https://raw.githubusercontent.com/ohdsi-studies/StrategusStudyRepoTemplate/main/renv.lock",
 #  destfile = "renv.lock")
-#renv::snapshot()
-renv::restore()
+# renv::snapshot()
+# renv::status()
+# renv::restore()
 
 # =============================================================================
 # Output Folder
@@ -85,7 +83,7 @@ cohortDefinitionSharedResource <- cgModule$createCohortSharedResourceSpecificati
 # =============================================================================
 # Everything the multiverse holds constant: covariate construction, the
 # target/comparator/outcome triplet, and the three study populations that
-# differ only in washout period.
+# differ only in risk window length.
 
 covs2exclude <- c(1118084, 1124300)
 
@@ -94,9 +92,6 @@ covSettings <- FeatureExtraction::createDefaultCovariateSettings(
   addDescendantsToExclude     = TRUE
 )
 
-getDbCmDataArgs <- CohortMethod::createGetDbCohortMethodDataArgs(
-  covariateSettings = covSettings
-)
 
 tco <- CohortMethod::createTargetComparatorOutcomes(
   targetId     = 1,   # celecoxib
@@ -104,35 +99,27 @@ tco <- CohortMethod::createTargetComparatorOutcomes(
   outcomes     = list(CohortMethod::createOutcome(outcomeId = 3))
 )
 
-studyPopArgs_wash180 <- CohortMethod::createCreateStudyPopulationArgs(
-  washoutPeriod                  = 180,
-  removeDuplicateSubjects        = "remove all",
-  removeSubjectsWithPriorOutcome = TRUE,
-  startAnchor                    = "cohort start",
-  riskWindowStart                = 1,
-  endAnchor                      = "cohort start",
-  riskWindowEnd                  = 280
+getDbCmDataArgs <- CohortMethod::createGetDbCohortMethodDataArgs(
+  covariateSettings       = covSettings,
+  washoutPeriod           = 180,
+  removeDuplicateSubjects = "remove all",
+  firstExposureOnly       = TRUE,
+  restrictToCommonPeriod  = TRUE
 )
 
-studyPopArgs_wash90 <- CohortMethod::createCreateStudyPopulationArgs(
-  washoutPeriod                  = 90,
-  removeDuplicateSubjects        = "remove all",
-  removeSubjectsWithPriorOutcome = TRUE,
-  startAnchor                    = "cohort start",
-  riskWindowStart                = 1,
-  endAnchor                      = "cohort start",
-  riskWindowEnd                  = 280
-)
+makeStudyPopArgs <- function(riskWindowEnd) {
+  CohortMethod::createCreateStudyPopulationArgs(
+    removeSubjectsWithPriorOutcome = TRUE,
+    startAnchor                    = "cohort start",
+    riskWindowStart                = 1,
+    endAnchor                      = "cohort start",
+    riskWindowEnd                  = riskWindowEnd
+  )
+}
 
-studyPopArgs_wash0 <- CohortMethod::createCreateStudyPopulationArgs(
-  washoutPeriod                  = 0,
-  removeDuplicateSubjects        = "remove all",
-  removeSubjectsWithPriorOutcome = TRUE,
-  startAnchor                    = "cohort start",
-  riskWindowStart                = 1,
-  endAnchor                      = "cohort start",
-  riskWindowEnd                  = 280
-)
+studyPop_30 <- makeStudyPopArgs(30)
+studyPop_60 <- makeStudyPopArgs(60)
+studyPop_90 <- makeStudyPopArgs(90)
 
 # =============================================================================
 # Helper: Matched Cox Analysis
@@ -141,7 +128,7 @@ studyPopArgs_wash0 <- CohortMethod::createCreateStudyPopulationArgs(
 # recommendation, 0.0001 ~ exact matching) and maxRatio (1 = pair matching,
 # 10 = variable ratio). Estimator is ATT by default.
 
-createMatchedCoxAnalysis <- function(analysisId, caliper, maxRatio, createStudyPopArgs,
+createMatchedCoxAnalysis <- function(analysisId, caliper, maxRatio, studyPopArgs,
                                      createPsArgs = CohortMethod::createCreatePsArgs(estimator = "att")) {
   description <- glue::glue("1:{maxRatio} matched Cox, caliper = {caliper}")
   
@@ -149,13 +136,13 @@ createMatchedCoxAnalysis <- function(analysisId, caliper, maxRatio, createStudyP
     analysisId                        = analysisId,
     description                       = description,
     getDbCohortMethodDataArgs         = getDbCmDataArgs,
-    createStudyPopArgs                = createStudyPopArgs,
+    createStudyPopulationArgs         = studyPopArgs,
     createPsArgs                      = createPsArgs,
     matchOnPsArgs                     = CohortMethod::createMatchOnPsArgs(caliper = caliper, maxRatio = maxRatio),
-    computeSharedCovariateBalanceArgs = CohortMethod::createComputeCovariateBalanceArgs(),
-    computeCovariateBalanceArgs       = CohortMethod::createComputeCovariateBalanceArgs(
-      covariateFilter = FeatureExtraction::getDefaultTable1Specifications()
-    ),
+    #computeSharedCovariateBalanceArgs = CohortMethod::createComputeCovariateBalanceArgs(),
+    #computeCovariateBalanceArgs       = CohortMethod::createComputeCovariateBalanceArgs(
+    #  covariateFilter = FeatureExtraction::getDefaultTable1Specifications()
+    #),
     fitOutcomeModelArgs               = CohortMethod::createFitOutcomeModelArgs(modelType = "cox")
   )
 }
@@ -163,22 +150,22 @@ createMatchedCoxAnalysis <- function(analysisId, caliper, maxRatio, createStudyP
 # =============================================================================
 # Matching Analyses (1-12)
 # =============================================================================
-# The matching specs: 2 calipers x 2 ratios x 3 washout periods = 12.
+# The matching specs: 2 calipers x 2 ratios x 3 risk windows. = 12.
 
-cmAnalysis1  <- createMatchedCoxAnalysis(analysisId = 1,  caliper = 0.2,    maxRatio = 1,  studyPopArgs_wash180)
-cmAnalysis2  <- createMatchedCoxAnalysis(analysisId = 2,  caliper = 0.2,    maxRatio = 10, studyPopArgs_wash180)
-cmAnalysis3  <- createMatchedCoxAnalysis(analysisId = 3,  caliper = 0.0001, maxRatio = 1,  studyPopArgs_wash180)
-cmAnalysis4  <- createMatchedCoxAnalysis(analysisId = 4,  caliper = 0.0001, maxRatio = 10, studyPopArgs_wash180)
+cmAnalysis1  <- createMatchedCoxAnalysis(analysisId = 1,  caliper = 0.2,    maxRatio = 1,  studyPopArgs = studyPop_30)
+cmAnalysis2  <- createMatchedCoxAnalysis(analysisId = 2,  caliper = 0.2,    maxRatio = 10, studyPopArgs = studyPop_30)
+cmAnalysis3  <- createMatchedCoxAnalysis(analysisId = 3,  caliper = 0.0001, maxRatio = 1,  studyPopArgs = studyPop_30)
+cmAnalysis4  <- createMatchedCoxAnalysis(analysisId = 4,  caliper = 0.0001, maxRatio = 10, studyPopArgs = studyPop_30)
 
-cmAnalysis5  <- createMatchedCoxAnalysis(analysisId = 5,  caliper = 0.2,    maxRatio = 1,  studyPopArgs_wash90)
-cmAnalysis6  <- createMatchedCoxAnalysis(analysisId = 6,  caliper = 0.2,    maxRatio = 10, studyPopArgs_wash90)
-cmAnalysis7  <- createMatchedCoxAnalysis(analysisId = 7,  caliper = 0.0001, maxRatio = 1,  studyPopArgs_wash90)
-cmAnalysis8  <- createMatchedCoxAnalysis(analysisId = 8,  caliper = 0.0001, maxRatio = 10, studyPopArgs_wash90)
+cmAnalysis5  <- createMatchedCoxAnalysis(analysisId = 5,  caliper = 0.2,    maxRatio = 1,  studyPopArgs = studyPop_60)
+cmAnalysis6  <- createMatchedCoxAnalysis(analysisId = 6,  caliper = 0.2,    maxRatio = 10, studyPopArgs = studyPop_60)
+cmAnalysis7  <- createMatchedCoxAnalysis(analysisId = 7,  caliper = 0.0001, maxRatio = 1,  studyPopArgs = studyPop_60)
+cmAnalysis8  <- createMatchedCoxAnalysis(analysisId = 8,  caliper = 0.0001, maxRatio = 10, studyPopArgs = studyPop_60)
 
-cmAnalysis9  <- createMatchedCoxAnalysis(analysisId = 9,  caliper = 0.2,    maxRatio = 1,  studyPopArgs_wash0)
-cmAnalysis10 <- createMatchedCoxAnalysis(analysisId = 10, caliper = 0.2,    maxRatio = 10, studyPopArgs_wash0)
-cmAnalysis11 <- createMatchedCoxAnalysis(analysisId = 11, caliper = 0.0001, maxRatio = 1,  studyPopArgs_wash0)
-cmAnalysis12 <- createMatchedCoxAnalysis(analysisId = 12, caliper = 0.0001, maxRatio = 10, studyPopArgs_wash0)
+cmAnalysis9  <- createMatchedCoxAnalysis(analysisId = 9,  caliper = 0.2,    maxRatio = 1,  studyPopArgs = studyPop_90)
+cmAnalysis10 <- createMatchedCoxAnalysis(analysisId = 10, caliper = 0.2,    maxRatio = 10, studyPopArgs = studyPop_90)
+cmAnalysis11 <- createMatchedCoxAnalysis(analysisId = 11, caliper = 0.0001, maxRatio = 1,  studyPopArgs = studyPop_90)
+cmAnalysis12 <- createMatchedCoxAnalysis(analysisId = 12, caliper = 0.0001, maxRatio = 10, studyPopArgs = studyPop_90)
 
 # =============================================================================
 # Helper: Stratified Cox Analysis
@@ -186,7 +173,7 @@ cmAnalysis12 <- createMatchedCoxAnalysis(analysisId = 12, caliper = 0.0001, maxR
 # Factory for one PS-stratified specification. Varies only the number of
 # strata; the outcome model is stratified to match.
 
-createStratifiedCoxAnalysis <- function(analysisId, numberOfStrata, createStudyPopArgs,
+createStratifiedCoxAnalysis <- function(analysisId, numberOfStrata, studyPopArgs,
                                         createPsArgs = CohortMethod::createCreatePsArgs(estimator = "att")) {
   description <- glue::glue("Stratified Cox, strata = {numberOfStrata}")
   
@@ -194,13 +181,13 @@ createStratifiedCoxAnalysis <- function(analysisId, numberOfStrata, createStudyP
     analysisId                        = analysisId,
     description                       = description,
     getDbCohortMethodDataArgs         = getDbCmDataArgs,
-    createStudyPopArgs                = createStudyPopArgs,
+    createStudyPopulationArgs         = studyPopArgs,
     createPsArgs                      = createPsArgs,
     stratifyByPsArgs                  = CohortMethod::createStratifyByPsArgs(numberOfStrata = numberOfStrata),
-    computeSharedCovariateBalanceArgs = CohortMethod::createComputeCovariateBalanceArgs(),
-    computeCovariateBalanceArgs       = CohortMethod::createComputeCovariateBalanceArgs(
-      covariateFilter = FeatureExtraction::getDefaultTable1Specifications()
-    ),
+    #computeSharedCovariateBalanceArgs = CohortMethod::createComputeCovariateBalanceArgs(),
+    #computeCovariateBalanceArgs       = CohortMethod::createComputeCovariateBalanceArgs(
+    #  covariateFilter = FeatureExtraction::getDefaultTable1Specifications()
+    #),
     fitOutcomeModelArgs               = CohortMethod::createFitOutcomeModelArgs(modelType = "cox", stratified = TRUE)
   )
 }
@@ -208,28 +195,28 @@ createStratifiedCoxAnalysis <- function(analysisId, numberOfStrata, createStudyP
 # =============================================================================
 # Stratification Analyses (13-30)
 # =============================================================================
-# The stratification specs: 6 strata counts (4-9) x 3 washout periods = 18.
+# The stratification specs: 6 strata counts (4-9) x 3 risk windows. = 18.
 
-cmAnalysis13 <- createStratifiedCoxAnalysis(analysisId = 13, numberOfStrata = 4, studyPopArgs_wash180)
-cmAnalysis14 <- createStratifiedCoxAnalysis(analysisId = 14, numberOfStrata = 5, studyPopArgs_wash180)
-cmAnalysis15 <- createStratifiedCoxAnalysis(analysisId = 15, numberOfStrata = 6, studyPopArgs_wash180)
-cmAnalysis16 <- createStratifiedCoxAnalysis(analysisId = 16, numberOfStrata = 7, studyPopArgs_wash180)
-cmAnalysis17 <- createStratifiedCoxAnalysis(analysisId = 17, numberOfStrata = 8, studyPopArgs_wash180)
-cmAnalysis18 <- createStratifiedCoxAnalysis(analysisId = 18, numberOfStrata = 9, studyPopArgs_wash180)
+cmAnalysis13 <- createStratifiedCoxAnalysis(analysisId = 13, numberOfStrata = 4, studyPopArgs = studyPop_30)
+cmAnalysis14 <- createStratifiedCoxAnalysis(analysisId = 14, numberOfStrata = 5, studyPopArgs = studyPop_30)
+cmAnalysis15 <- createStratifiedCoxAnalysis(analysisId = 15, numberOfStrata = 6, studyPopArgs = studyPop_30)
+cmAnalysis16 <- createStratifiedCoxAnalysis(analysisId = 16, numberOfStrata = 7, studyPopArgs = studyPop_30)
+cmAnalysis17 <- createStratifiedCoxAnalysis(analysisId = 17, numberOfStrata = 8, studyPopArgs = studyPop_30)
+cmAnalysis18 <- createStratifiedCoxAnalysis(analysisId = 18, numberOfStrata = 9, studyPopArgs = studyPop_30)
 
-cmAnalysis19 <- createStratifiedCoxAnalysis(analysisId = 19, numberOfStrata = 4, studyPopArgs_wash90)
-cmAnalysis20 <- createStratifiedCoxAnalysis(analysisId = 20, numberOfStrata = 5, studyPopArgs_wash90)
-cmAnalysis21 <- createStratifiedCoxAnalysis(analysisId = 21, numberOfStrata = 6, studyPopArgs_wash90)
-cmAnalysis22 <- createStratifiedCoxAnalysis(analysisId = 22, numberOfStrata = 7, studyPopArgs_wash90)
-cmAnalysis23 <- createStratifiedCoxAnalysis(analysisId = 23, numberOfStrata = 8, studyPopArgs_wash90)
-cmAnalysis24 <- createStratifiedCoxAnalysis(analysisId = 24, numberOfStrata = 9, studyPopArgs_wash90)
+cmAnalysis19 <- createStratifiedCoxAnalysis(analysisId = 19, numberOfStrata = 4, studyPopArgs = studyPop_60)
+cmAnalysis20 <- createStratifiedCoxAnalysis(analysisId = 20, numberOfStrata = 5, studyPopArgs = studyPop_60)
+cmAnalysis21 <- createStratifiedCoxAnalysis(analysisId = 21, numberOfStrata = 6, studyPopArgs = studyPop_60)
+cmAnalysis22 <- createStratifiedCoxAnalysis(analysisId = 22, numberOfStrata = 7, studyPopArgs = studyPop_60)
+cmAnalysis23 <- createStratifiedCoxAnalysis(analysisId = 23, numberOfStrata = 8, studyPopArgs = studyPop_60)
+cmAnalysis24 <- createStratifiedCoxAnalysis(analysisId = 24, numberOfStrata = 9, studyPopArgs = studyPop_60)
 
-cmAnalysis25 <- createStratifiedCoxAnalysis(analysisId = 25, numberOfStrata = 4, studyPopArgs_wash0)
-cmAnalysis26 <- createStratifiedCoxAnalysis(analysisId = 26, numberOfStrata = 5, studyPopArgs_wash0)
-cmAnalysis27 <- createStratifiedCoxAnalysis(analysisId = 27, numberOfStrata = 6, studyPopArgs_wash0)
-cmAnalysis28 <- createStratifiedCoxAnalysis(analysisId = 28, numberOfStrata = 7, studyPopArgs_wash0)
-cmAnalysis29 <- createStratifiedCoxAnalysis(analysisId = 29, numberOfStrata = 8, studyPopArgs_wash0)
-cmAnalysis30 <- createStratifiedCoxAnalysis(analysisId = 30, numberOfStrata = 9, studyPopArgs_wash0)
+cmAnalysis25 <- createStratifiedCoxAnalysis(analysisId = 25, numberOfStrata = 4, studyPopArgs = studyPop_90)
+cmAnalysis26 <- createStratifiedCoxAnalysis(analysisId = 26, numberOfStrata = 5, studyPopArgs = studyPop_90)
+cmAnalysis27 <- createStratifiedCoxAnalysis(analysisId = 27, numberOfStrata = 6, studyPopArgs = studyPop_90)
+cmAnalysis28 <- createStratifiedCoxAnalysis(analysisId = 28, numberOfStrata = 7, studyPopArgs = studyPop_90)
+cmAnalysis29 <- createStratifiedCoxAnalysis(analysisId = 29, numberOfStrata = 8, studyPopArgs = studyPop_90)
+cmAnalysis30 <- createStratifiedCoxAnalysis(analysisId = 30, numberOfStrata = 9, studyPopArgs = studyPop_90)
 
 # =============================================================================
 # Helper: Weighted (IPTW) Cox Analysis
@@ -242,7 +229,7 @@ cmAnalysis30 <- createStratifiedCoxAnalysis(analysisId = 30, numberOfStrata = 9,
 createWeightedCoxAnalysis <- function(analysisId, estimator,
                                       maxWeight      = NULL,
                                       trimPercentile = 0,
-                                      createStudyPopArgs) {
+                                      studyPopArgs) {
   description <- glue::glue(
     "IPTW Cox, estimator = {estimator}, trim = {trimPercentile}%, max weight = {ifelse(is.null(maxWeight), 'none', maxWeight)}"
   )
@@ -263,14 +250,14 @@ createWeightedCoxAnalysis <- function(analysisId, estimator,
     analysisId                        = analysisId,
     description                       = description,
     getDbCohortMethodDataArgs         = getDbCmDataArgs,
-    createStudyPopArgs                = createStudyPopArgs,
+    createStudyPopulationArgs         = studyPopArgs,
     createPsArgs                      = CohortMethod::createCreatePsArgs(estimator = estimator),
     trimByPsArgs                      = trimByPsArgs,
     truncateIptwArgs                  = truncateIptwArgs,
-    computeSharedCovariateBalanceArgs = CohortMethod::createComputeCovariateBalanceArgs(),
-    computeCovariateBalanceArgs       = CohortMethod::createComputeCovariateBalanceArgs(
-      covariateFilter = FeatureExtraction::getDefaultTable1Specifications()
-    ),
+    #computeSharedCovariateBalanceArgs = CohortMethod::createComputeCovariateBalanceArgs(),
+    #computeCovariateBalanceArgs       = CohortMethod::createComputeCovariateBalanceArgs(
+    #  covariateFilter = FeatureExtraction::getDefaultTable1Specifications()
+    #),
     fitOutcomeModelArgs               = CohortMethod::createFitOutcomeModelArgs(
       modelType          = "cox",
       inversePtWeighting = TRUE
@@ -281,23 +268,23 @@ createWeightedCoxAnalysis <- function(analysisId, estimator,
 # =============================================================================
 # Weighting Analyses (31-42)
 # =============================================================================
-# The IPTW specs: {trim, no trim} x {truncate, no truncate} x 3 washout
+# The IPTW specs: {trim, no trim} x {truncate, no truncate} x 3 risk windows
 # periods = 12.
 
-cmAnalysis31 <- createWeightedCoxAnalysis(31, estimator = "att", trimPercentile = 0, maxWeight = NULL, createStudyPopArgs = studyPopArgs_wash180)  # no trim, no truncation
-cmAnalysis32 <- createWeightedCoxAnalysis(32, estimator = "att", trimPercentile = 1, maxWeight = NULL, createStudyPopArgs = studyPopArgs_wash180)  # trim only
-cmAnalysis33 <- createWeightedCoxAnalysis(33, estimator = "att", trimPercentile = 0, maxWeight = 10,   createStudyPopArgs = studyPopArgs_wash180)  # truncate only
-cmAnalysis34 <- createWeightedCoxAnalysis(34, estimator = "att", trimPercentile = 1, maxWeight = 10,   createStudyPopArgs = studyPopArgs_wash180)  # both
+cmAnalysis31 <- createWeightedCoxAnalysis(31, estimator = "att", trimPercentile = 0, maxWeight = NULL, studyPopArgs = studyPop_30)  # no trim, no truncation
+cmAnalysis32 <- createWeightedCoxAnalysis(32, estimator = "att", trimPercentile = 1, maxWeight = NULL, studyPopArgs = studyPop_30)  # trim only
+cmAnalysis33 <- createWeightedCoxAnalysis(33, estimator = "att", trimPercentile = 0, maxWeight = 10,   studyPopArgs = studyPop_30)  # truncate only
+cmAnalysis34 <- createWeightedCoxAnalysis(34, estimator = "att", trimPercentile = 1, maxWeight = 10,   studyPopArgs = studyPop_30)  # both
 
-cmAnalysis35 <- createWeightedCoxAnalysis(35, estimator = "att", trimPercentile = 0, maxWeight = NULL, createStudyPopArgs = studyPopArgs_wash90)   # no trim, no truncation
-cmAnalysis36 <- createWeightedCoxAnalysis(36, estimator = "att", trimPercentile = 1, maxWeight = NULL, createStudyPopArgs = studyPopArgs_wash90)   # trim only
-cmAnalysis37 <- createWeightedCoxAnalysis(37, estimator = "att", trimPercentile = 0, maxWeight = 10,   createStudyPopArgs = studyPopArgs_wash90)   # truncate only
-cmAnalysis38 <- createWeightedCoxAnalysis(38, estimator = "att", trimPercentile = 1, maxWeight = 10,   createStudyPopArgs = studyPopArgs_wash90)   # both
+cmAnalysis35 <- createWeightedCoxAnalysis(35, estimator = "att", trimPercentile = 0, maxWeight = NULL, studyPopArgs = studyPop_60)   # no trim, no truncation
+cmAnalysis36 <- createWeightedCoxAnalysis(36, estimator = "att", trimPercentile = 1, maxWeight = NULL, studyPopArgs = studyPop_60)   # trim only
+cmAnalysis37 <- createWeightedCoxAnalysis(37, estimator = "att", trimPercentile = 0, maxWeight = 10,   studyPopArgs = studyPop_60)   # truncate only
+cmAnalysis38 <- createWeightedCoxAnalysis(38, estimator = "att", trimPercentile = 1, maxWeight = 10,   studyPopArgs = studyPop_60)   # both
 
-cmAnalysis39 <- createWeightedCoxAnalysis(39, estimator = "att", trimPercentile = 0, maxWeight = NULL, createStudyPopArgs = studyPopArgs_wash0)    # no trim, no truncation
-cmAnalysis40 <- createWeightedCoxAnalysis(40, estimator = "att", trimPercentile = 1, maxWeight = NULL, createStudyPopArgs = studyPopArgs_wash0)    # trim only
-cmAnalysis41 <- createWeightedCoxAnalysis(41, estimator = "att", trimPercentile = 0, maxWeight = 10,   createStudyPopArgs = studyPopArgs_wash0)    # truncate only
-cmAnalysis42 <- createWeightedCoxAnalysis(42, estimator = "att", trimPercentile = 1, maxWeight = 10,   createStudyPopArgs = studyPopArgs_wash0)    # both
+cmAnalysis39 <- createWeightedCoxAnalysis(39, estimator = "att", trimPercentile = 0, maxWeight = NULL, studyPopArgs = studyPop_90)    # no trim, no truncation
+cmAnalysis40 <- createWeightedCoxAnalysis(40, estimator = "att", trimPercentile = 1, maxWeight = NULL, studyPopArgs = studyPop_90)    # trim only
+cmAnalysis41 <- createWeightedCoxAnalysis(41, estimator = "att", trimPercentile = 0, maxWeight = 10,   studyPopArgs = studyPop_90)    # truncate only
+cmAnalysis42 <- createWeightedCoxAnalysis(42, estimator = "att", trimPercentile = 1, maxWeight = 10,   studyPopArgs = studyPop_90)    # both
 
 # =============================================================================
 # Setup CohortMethod Module
@@ -307,9 +294,13 @@ cmAnalysis42 <- createWeightedCoxAnalysis(42, estimator = "att", trimPercentile 
 
 cmModule <- Strategus::CohortMethodModule$new()
 
-cohortMethodModuleSpecifications <- cmModule$createModuleSpecifications(
+cmAnalysesSpec <- CohortMethod::createCmAnalysesSpecifications(
   cmAnalysisList               = mget(paste0("cmAnalysis", 1:42)),
   targetComparatorOutcomesList = list(tco)
+)
+
+cohortMethodModuleSpecifications <- cmModule$createModuleSpecifications(
+  cmAnalysesSpecifications = cmAnalysesSpec$toList()
 )
 
 # =============================================================================
@@ -336,11 +327,12 @@ cohortGeneratorModuleSpecifications <- cgModule$createModuleSpecifications(
 # Strategus::loadAnalysisSpecifications(). Writing it first means a failed run
 # still leaves the declaration behind.
 
-analysisSpecifications <- Strategus::createEmptyAnalysisSpecificiations() |>
+analysisSpecifications <- Strategus::createEmptyAnalysisSpecifications() |>
   Strategus::addSharedResources(cohortDefinitionSharedResource) |>
   Strategus::addModuleSpecifications(cohortGeneratorModuleSpecifications) |>
   Strategus::addModuleSpecifications(cohortMethodModuleSpecifications)
 
+# save the spec as a machine-readable JSON file
 ParallelLogger::saveSettingsToJson(
   analysisSpecifications,
   file.path(outputFolder, "analysisSpecification.json")
@@ -355,12 +347,12 @@ ParallelLogger::saveSettingsToJson(
 
 connectionDetails <- Eunomia::getEunomiaConnectionDetails()
 
-Eunomia::createCohorts(
-  connectionDetails,
-  cdmDatabaseSchema    = "main",
-  cohortDatabaseSchema = "main",
-  cohortTable          = "cohort"
-)
+# Eunomia::createCohorts(
+#   connectionDetails,
+#   cdmDatabaseSchema    = "main",
+#   cohortDatabaseSchema = "main",
+#   cohortTable          = "cohort"
+# )
 
 # =============================================================================
 # Execution Settings

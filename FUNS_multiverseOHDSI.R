@@ -1,7 +1,7 @@
 # =============================================================================
 # multiverseOHDSI (minimal)
 # -----------------------------------------------------------------------------
-#   source("multiverseOHDSI_minimal.R")
+#   source("FUNS_multiverseOHDSI.R")
 #
 #   mv <- readMultiverse("runs/multiverse_20260828_141530/results_folder")
 #
@@ -11,16 +11,20 @@
 #   # 2. Choose the arguments to show under the curve, and how to label them
 #   createSpecificationCurve(
 #     mv,
-#     decisions = c("PS adjustment"  = "psAdjustment",
-#                   "Washout (days)" = "createStudyPopArgs.washoutPeriod",
-#                   "Caliper"        = "matchOnPsArgs.caliper",
-#                   "Match ratio"    = "matchOnPsArgs.maxRatio",
-#                   "PS strata"      = "stratifyByPsArgs.numberOfStrata",
-#                   "Trim fraction"  = "trimByPsArgs.trimFraction",
-#                   "Max weight"     = "truncateIptwArgs.maxWeight")
+#     decisions = c("PS adjustment"      = "psAdjustment",
+#                   "Outcome model"      = "outcomeModel",
+#                   "Risk window (days)" = "createStudyPopulationArgs.riskWindowEnd",
+#                   "Caliper"            = "matchOnPsArgs.caliper",
+#                   "Match ratio"        = "matchOnPsArgs.maxRatio",
+#                   "PS strata"          = "stratifyByPsArgs.numberOfStrata",
+#                   "Trim fraction"      = "trimByPsArgs.trimFraction",
+#                   "Max weight"         = "truncateIptwArgs.maxWeight")
 #   )
 #
 #   createVolcanoPlot(mv, colourBy = c("PS adjustment" = "psAdjustment"))
+#
+# Both plot functions take `baseSize` to scale every font in the figure at
+# once; raise it for posters and slides, lower it for print.
 #
 # Requires ggplot2 and jsonlite; patchwork for the stacked specification curve.
 #
@@ -32,12 +36,13 @@
 #   back. Arguments absent from an analysis read "not applicable"; arguments
 #   explicitly passed as NULL read "none".
 #
-#   Two kinds of derived column are added, describing which functions built
-#   each specification rather than what they were passed:
+#   Three kinds of derived column are added, describing how each specification
+#   was built rather than what its arguments were:
 #     psAdjustment          "Matching", "Stratification", "IPTW" or "None"
+#     outcomeModel          "Cox", "Logistic", "Poisson", ...
 #     uses.<block>          "yes"/"no" for each createXxxArgs() block, e.g.
 #                           uses.matchOnPsArgs, uses.trimByPsArgs
-#   Both are usable in `decisions` and `colourBy` like any other column.
+#   All are usable in `decisions` and `colourBy` like any other column.
 #
 # inspectMultiverseSpec(x, all = FALSE)
 #   Reports which arguments vary across analyses, their distinct values, and
@@ -45,22 +50,29 @@
 #   belongs under the plot, and to check the multiverse is the size you
 #   declared. `all = TRUE` also lists the arguments held constant.
 #
-# createSpecificationCurve(x, decisions = NULL)
+# createSpecificationCurve(x, decisions = NULL, baseSize = 14)
 #   Estimates ranked smallest to largest, over a dashboard of the arguments
 #   named in `decisions`. Pass a named vector to relabel the dashboard rows:
 #     c("Caliper" = "matchOnPsArgs.caliper", "PS strata" = "stratifyByPsArgs.numberOfStrata")
 #   Row order follows the order given. Defaults to every argument that varies.
 #
-# createVolcanoPlot(x, colourBy = NULL)
-#   -log10(p) against the estimate, one point per specification. The region
-#   below p = 0.05 is shaded and the 1st/50th/99th percentiles of the estimate
-#   are marked; the spread between the outer two is the relative effect size
-#   ratio. `colourBy` takes the same input as `decisions`, but one entry only:
-#     colourBy = c("Washout (days)" = "createStudyPopArgs.washoutPeriod")
+# createVolcanoPlot(x, colourBy = NULL, baseSize = 14)
+#   -log10(p) against the estimate. The region below p = 0.05 is shaded and
+#   the 1st/50th/99th percentiles of the estimate are marked; the spread
+#   between the outer two is the relative effect size ratio. Reference lines
+#   and their labels are black, so colour carries only the `colourBy`
+#   grouping. Specifications landing on the same point are collapsed into one
+#   marker sized by how many they represent, so exact ties stay visible.
+#   `colourBy` takes the same input as `decisions`, but one entry only:
+#     colourBy = c("PS adjustment" = "psAdjustment")
 #   The name becomes the legend title.
 #
-# Both plots put the estimate on a log-spaced axis labelled with hazard
-# ratios, so 0.5 and 2 sit equally far from the null.
+# Both plots put the estimate on a log-spaced axis, so 0.5 and 2 sit equally
+# far from the null. The axis is labelled "Estimate" rather than with a named
+# effect measure: the OHDSI results model stores every effect estimate in a
+# column called `rr` whatever outcome model was fitted, so what the number
+# means depends on the specification. Add `outcomeModel` to `decisions` to
+# show which model produced each estimate.
 # =============================================================================
 
 
@@ -89,7 +101,7 @@ readMultiverse <- function(resultsFolder) {
     estimates  = estimates,
     grid       = grid$grid,        # every argument, full dotted paths
     varying    = grid$varying,     # those taking more than one value
-    derived    = grid$derived,     # columns describing which functions were used
+    derived    = grid$derived,     # columns describing how each spec was built
     gridSource = grid$source
   )
 }
@@ -185,7 +197,7 @@ readMultiverse <- function(resultsFolder) {
   grid <- grid[, c("analysis_id", fields), drop = FALSE]
   grid <- grid[order(grid$analysis_id), ]
   
-  # Which functions built each specification, not just their arguments.
+  # How each specification was built, not just what its arguments were.
   grid <- .derivedColumns(grid)
   derived <- setdiff(names(grid), c("analysis_id", fields))
   
@@ -197,29 +209,45 @@ readMultiverse <- function(resultsFolder) {
   list(grid = grid, varying = varying, derived = derived, source = source)
 }
 
-# Add columns describing which createXxxArgs() blocks each analysis used, plus
-# a single composite naming the propensity-score adjustment family. These are
-# derived, not read from the JSON, and are prefixed to make that visible:
+# Add columns describing how each specification was built, alongside the raw
+# arguments. These are derived rather than read from the JSON:
 #
 #   uses.matchOnPsArgs, uses.stratifyByPsArgs, ...   yes / no
 #   psAdjustment                                    Matching / Stratification /
 #                                                   IPTW / None
+#   outcomeModel                                    Cox / Logistic / Poisson
 #
 # psAdjustment rules: matchOnPsArgs present -> Matching; stratifyByPsArgs
 # present -> Stratification; fitOutcomeModelArgs.inversePtWeighting TRUE ->
 # IPTW. IPTW is detected from the weighting flag rather than from trimming or
 # truncation, because an untrimmed, untruncated IPTW analysis carries neither
 # of those blocks. Families are combined with " + " if more than one applies.
+#
+# outcomeModel reads fitOutcomeModelArgs.modelType and reports the model
+# family only. Stratification is deliberately not folded in: a stratified Cox
+# model is still a Cox model producing a hazard ratio, and the stratification
+# is already visible through psAdjustment. outcomeModel matters because the
+# results model stores every effect estimate in a column named `rr` whatever
+# model was fitted, so the estimate's meaning can only be read from the
+# specification.
+#
+# A block counts as absent when every one of its columns reads either
+# "not applicable" (the argument does not appear for this analysis) or "none"
+# (the block was serialised as an explicit JSON null). Both mean the block was
+# not used; treating only the former as absent marks every block present on
+# every analysis.
 .derivedColumns <- function(grid) {
   fields <- setdiff(names(grid), "analysis_id")
   blocks <- unique(sub("\\..*$", "", fields))
   blocks <- blocks[grepl("Args$", blocks)]
   
+  absent <- c("not applicable", "none")
+  
   used <- list()
   for (b in blocks) {
     cols <- fields[sub("\\..*$", "", fields) == b]
     present <- apply(grid[, cols, drop = FALSE], 1,
-                     function(r) any(r != "not applicable"))
+                     function(r) any(!r %in% absent))
     used[[b]] <- present
     grid[[paste0("uses.", b)]] <- ifelse(present, "yes", "no")
   }
@@ -243,6 +271,14 @@ readMultiverse <- function(resultsFolder) {
   fam <- addFamily(fam, isIptw, "IPTW")
   fam[!nzchar(fam)] <- "None"
   grid$psAdjustment <- fam
+  
+  if ("fitOutcomeModelArgs.modelType" %in% fields) {
+    modelType <- grid[["fitOutcomeModelArgs.modelType"]]
+    pretty <- c(cox = "Cox", logistic = "Logistic", poisson = "Poisson")
+    label <- unname(pretty[modelType])
+    label[is.na(label)] <- modelType[is.na(label)]
+    grid$outcomeModel <- label
+  }
   
   grid
 }
@@ -361,10 +397,37 @@ inspectMultiverseSpec <- function(x, all = FALSE) {
   sort(unique(c(b, 1)))
 }
 
+# Shared look for both figures: boxed panels, black axis text, horizontal
+# gridlines only, and every font scaled from one number so the figure stays
+# legible when it is shrunk into a poster or a slide.
+.multiverseTheme <- function(baseSize = 14) {
+  ggplot2::theme_bw(base_size = baseSize) +
+    ggplot2::theme(
+      panel.border       = ggplot2::element_rect(colour = "black", fill = NA,
+                                                 linewidth = 0.8),
+      panel.grid.minor   = ggplot2::element_blank(),
+      panel.grid.major.x = ggplot2::element_blank(),
+      panel.grid.major.y = ggplot2::element_line(colour = "grey90",
+                                                 linewidth = 0.4),
+      axis.text          = ggplot2::element_text(colour = "black",
+                                                 size = baseSize),
+      axis.title         = ggplot2::element_text(size = baseSize + 2),
+      axis.ticks         = ggplot2::element_line(colour = "black"),
+      strip.background   = ggplot2::element_blank(),
+      strip.placement    = "outside",
+      strip.text         = ggplot2::element_text(size = baseSize,
+                                                 colour = "black"),
+      legend.position    = "top",
+      legend.title       = ggplot2::element_text(size = baseSize),
+      legend.text        = ggplot2::element_text(size = baseSize),
+      legend.key         = ggplot2::element_blank()
+    )
+}
+
 
 # ----------------------------------------------------- specification curve
 
-createSpecificationCurve <- function(x, decisions = NULL) {
+createSpecificationCurve <- function(x, decisions = NULL, baseSize = 14) {
   prepped <- .prepEstimates(x)
   d <- prepped$data
   
@@ -374,18 +437,19 @@ createSpecificationCurve <- function(x, decisions = NULL) {
   top <- ggplot2::ggplot(d, ggplot2::aes(x = .rank, y = .est)) +
     ggplot2::geom_linerange(
       ggplot2::aes(ymin = ci_95_lb, ymax = ci_95_ub,
-                   colour = significant), alpha = 0.5) +
-    ggplot2::geom_point(ggplot2::aes(colour = significant), size = 1.4) +
-    ggplot2::geom_hline(yintercept = 1, linetype = "dashed") +
+                   colour = significant), linewidth = 0.7, alpha = 0.7) +
+    ggplot2::geom_point(ggplot2::aes(colour = significant), size = 2.6) +
+    ggplot2::geom_hline(yintercept = 1, linetype = "dashed",
+                        colour = "grey40", linewidth = 0.6) +
     ggplot2::scale_colour_manual(
-      values = c("FALSE" = "#4C72B0", "TRUE" = "#C44E52"),
-      labels = c("Not significant", "p < 0.05"), name = NULL) +
+      values = c("FALSE" = "#2E75B6", "TRUE" = "#E03531"),
+      labels = c("p >= 0.05", "p < 0.05"), name = NULL) +
     ggplot2::scale_y_continuous(
       trans = "log", breaks = .ratioBreaks(c(d$ci_95_lb, d$ci_95_ub, d$.est))) +
-    ggplot2::labs(x = NULL, y = "Hazard ratio") +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(axis.text.x = ggplot2::element_blank(),
-                   legend.position = "top")
+    ggplot2::labs(x = NULL, y = "Estimate") +
+    .multiverseTheme(baseSize) +
+    ggplot2::theme(axis.text.x  = ggplot2::element_blank(),
+                   axis.ticks.x = ggplot2::element_blank())
   
   long <- do.call(rbind, lapply(seq_along(dec$cols), function(i) {
     data.frame(rank = d$.rank, decision = dec$labels[i],
@@ -396,16 +460,16 @@ createSpecificationCurve <- function(x, decisions = NULL) {
   long$decision <- factor(long$decision, levels = dec$labels)
   
   bottom <- ggplot2::ggplot(long, ggplot2::aes(x = rank, y = value)) +
-    ggplot2::geom_point(shape = 15, size = 1.1, colour = "#4C72B0") +
+    ggplot2::geom_point(shape = 15, size = 2.6, colour = "#2E75B6") +
     ggplot2::facet_grid(decision ~ ., scales = "free_y", space = "free_y",
                         switch = "y") +
     ggplot2::labs(x = "Specification (ranked by estimate)", y = NULL) +
-    ggplot2::theme_minimal() +
+    .multiverseTheme(baseSize) +
     ggplot2::theme(
-      axis.text.x = ggplot2::element_blank(),
-      strip.placement = "outside",
-      strip.text.y.left = ggplot2::element_text(angle = 0, hjust = 1),
-      panel.grid.major.x = ggplot2::element_blank()
+      axis.text.x       = ggplot2::element_blank(),
+      axis.ticks.x      = ggplot2::element_blank(),
+      strip.text.y.left = ggplot2::element_text(angle = 0, hjust = 1,
+                                                size = baseSize)
     )
   
   patchwork::wrap_plots(top, bottom, ncol = 1, heights = c(2, 3))
@@ -414,7 +478,7 @@ createSpecificationCurve <- function(x, decisions = NULL) {
 
 # ------------------------------------------------------------------ volcano
 
-createVolcanoPlot <- function(x, colourBy = NULL) {
+createVolcanoPlot <- function(x, colourBy = NULL, baseSize = 14) {
   prepped <- .prepEstimates(x)
   d <- prepped$data
   
@@ -431,13 +495,23 @@ createVolcanoPlot <- function(x, colourBy = NULL) {
     legendTitle <- cb$labels
   }
   
+  # Specifications with identical estimates overplot exactly, so a cluster of
+  # a dozen is indistinguishable from a single point. Count them and keep one
+  # row per distinct position, sizing the marker by the count. Points are
+  # separated by colour group as well as position, so a group never absorbs
+  # another group's ties.
+  key <- paste(signif(d$.est, 8), signif(d$.negLogP, 8),
+               if (is.null(colourBy)) "" else d$.colour)
+  d$.n <- as.integer(table(key)[key])
+  d <- d[!duplicated(key), ]
+  
   q <- stats::quantile(d$.est, probs = c(0.01, 0.5, 0.99), na.rm = TRUE)
   qDf <- data.frame(x = as.numeric(q), label = c("1st", "50th", "99th"))
   
   mapping <- if (is.null(colourBy)) {
-    ggplot2::aes(x = .est, y = .negLogP)
+    ggplot2::aes(x = .est, y = .negLogP, size = .n)
   } else {
-    ggplot2::aes(x = .est, y = .negLogP, colour = .colour)
+    ggplot2::aes(x = .est, y = .negLogP, colour = .colour, size = .n)
   }
   
   ggplot2::ggplot(d, mapping) +
@@ -445,21 +519,23 @@ createVolcanoPlot <- function(x, colourBy = NULL) {
                       ymin = -Inf, ymax = sigLine,
                       fill = "grey50", alpha = 0.10) +
     ggplot2::geom_vline(data = qDf, ggplot2::aes(xintercept = x),
-                        colour = "#4C72B0", linetype = "dotted",
-                        inherit.aes = FALSE) +
+                        colour = "black", linetype = "dotted",
+                        linewidth = 0.6, inherit.aes = FALSE) +
     ggplot2::geom_text(data = qDf, ggplot2::aes(x = x, y = Inf, label = label),
                        inherit.aes = FALSE, vjust = 1.4, hjust = -0.15,
-                       size = 3, colour = "#4C72B0") +
-    ggplot2::geom_hline(yintercept = sigLine, colour = "#C44E52",
-                        linetype = "dashed") +
-    ggplot2::geom_vline(xintercept = 1, colour = "#55A868",
-                        linetype = "dashed") +
-    ggplot2::geom_point(alpha = 0.75, size = 1.8) +
+                       size = baseSize / 3.2, colour = "black") +
+    ggplot2::geom_hline(yintercept = sigLine, colour = "black",
+                        linetype = "dashed", linewidth = 0.6) +
+    ggplot2::geom_vline(xintercept = 1, colour = "black",
+                        linetype = "longdash", linewidth = 0.6) +
+    ggplot2::geom_point(alpha = 0.75) +
     ggplot2::annotate("text", x = -Inf, y = sigLine, label = "p = 0.05",
-                      hjust = -0.15, vjust = -0.6, size = 3,
-                      colour = "#C44E52") +
+                      hjust = -0.15, vjust = -0.6, size = baseSize / 3.2,
+                      colour = "black") +
     ggplot2::scale_x_continuous(trans = "log", breaks = .ratioBreaks(d$.est)) +
-    ggplot2::labs(x = "Hazard ratio", y = expression(-log[10](p)),
-                  colour = legendTitle) +
-    ggplot2::theme_minimal()
+    ggplot2::scale_size_area(max_size = 10,
+                             breaks = function(v) unique(round(pretty(v)))) +
+    ggplot2::labs(x = "Estimate", y = expression(-log[10](p)),
+                  colour = legendTitle, size = "Specifications") +
+    .multiverseTheme(baseSize)
 }
