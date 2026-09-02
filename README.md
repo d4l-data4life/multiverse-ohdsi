@@ -1,7 +1,7 @@
 # Multiverse analysis for OHDSI
 
-This repo contains template code to conduct a multiverse analysis using the
-[Strategus](https://github.com/OHDSI/Strategus) and the
+This repo contains template code to conduct a multiverse analysis using
+[Strategus](https://github.com/OHDSI/Strategus) and the wider
 [HADES](https://ohdsi.github.io/Hades/) toolchain.
 
 ## Motivation
@@ -16,43 +16,44 @@ propensity score adjustment (Suchard et al., 2013), negative control outcomes wi
 empirical calibration (Schuemie et al., 2018), and pre-specified diagnostics that gate
 whether an estimate may be unblinded (Conover et al., 2025).
 
-Harmonising the data and the tooling removes variability in the implementation of
-real-world evidence studies, and best practice settles many design questions. However, it does not
-settle all of them. How long a risk window period should be, whether to match, stratify, or
-weight on the propensity score, how wide a caliper to set, how many strata to use, whether
-to trim or truncate extreme weights — guidance favours no single option, yet each can move
-the estimate. Multiverse analysis addresses precisely this (Steegen et al., 2016): instead
-of reporting one pipeline, the analyst defines all defensible alternatives, executes them,
-and reports the distribution of findings. Related approaches include specification curve
-analysis (Simonsohn et al., 2020) and, from epidemiology, vibration of effects
-(Patel et al., 2015; Vinatier et al., 2025).
+Harmonising the data and the tooling reduces variability in the implementation of
+real-world evidence studies, and best practice settles many design questions. However, it
+does not settle all of them. How long the risk window should be, whether to match,
+stratify, or weight on the propensity score, how wide a caliper to set, how many strata to
+use, whether to trim or truncate extreme weights — guidance favours no single option, yet
+each can move the estimate. Multiverse analysis addresses precisely this (Steegen et al.,
+2016): instead of reporting one pipeline, the analyst defines all defensible alternatives,
+executes them, and reports the distribution of findings. Related approaches include
+specification curve analysis (Simonsohn et al., 2020) and, from epidemiology, vibration of
+effects (Patel et al., 2015; Vinatier et al., 2025).
 
-Importantly, multiverse analysis is not a single method. Recent work distinguishes three purposes with
-different purposes (Lemster et al., 2026): a confirmatory multiverse restricts itself
-to a small set of specifications targeting a precisely defined estimand and draws an
-inferential conclusion with adjustment for multiplicity; an exploratory multiverse admits
-a broader but still defensible set, foregoes formal inference, and serves robustness
-assessment and hypothesis generation; a meta-research multiverse takes the research
-process rather than the clinical question as its object, and is the only variant in which
-specifications that are not equally defensible may legitimately be included, precisely
-because researchers demonstrably use them. So framed, multiverse analysis complements
-rather than duplicates existing large-scale evidence generation in OHDSI: programmes such
-as LEGEND vary the question across many exposure–comparator–outcome triplets and databases
-while holding the design close to fixed (Suchard et al., 2019), whereas a multiverse varies
-the design while holding the question fixed. 
+Importantly, multiverse analysis is not a single method. Recent work distinguishes three
+variants with different purposes (Lemster et al., 2026): a confirmatory multiverse
+restricts itself to a small set of specifications targeting a precisely defined estimand
+and draws an inferential conclusion with adjustment for multiplicity; an exploratory
+multiverse admits a broader but still defensible set, foregoes formal inference, and serves
+robustness assessment and hypothesis generation; a meta-research multiverse takes the
+research process rather than the clinical question as its object, and is the only variant
+in which specifications that are not equally defensible may legitimately be included,
+precisely because researchers demonstrably use them. So framed, multiverse analysis
+complements rather than duplicates existing large-scale evidence generation in OHDSI:
+programmes such as LEGEND vary the question across many exposure–comparator–outcome
+triplets and databases while holding the design close to fixed (Suchard et al., 2019),
+whereas a multiverse varies the design while holding the question fixed.
 
-Building on OHDSI methodology, we propose a structured framework for multiverse analysis in 
-large-scale RWE and give guidance on how to interpret the resulting distribution of estimates.
+Building on OHDSI methodology, we propose a structured framework for multiverse analysis in
+large-scale RWE and give guidance on how to interpret the resulting distribution of
+estimates.
 
 ## Illustrative example
 
-For demo purposes we run it against the synthetic
+The framework is illustrated on the synthetic
 [Eunomia](https://github.com/OHDSI/Eunomia) GiBleed demo CDM.
 
 | | |
 |---|---|
-| **Target** | Diclofenac (cohort 2) |
-| **Comparator** | Celecoxib (cohort 1) |
+| **Target** | Celecoxib (cohort 1) |
+| **Comparator** | Diclofenac (cohort 2) |
 | **Outcome** | Gastrointestinal bleed (cohort 3) |
 | **Data** | Eunomia GiBleed synthetic CDM |
 | **Estimand** | ATT |
@@ -61,47 +62,58 @@ For demo purposes we run it against the synthetic
 Covariates for the two exposure ingredients (and their descendants) are excluded from
 the propensity model.
 
+This multiverse is exploratory in the sense of Lemster et al. (2026): the specification set
+is broad rather than minimal, and no inferential conclusion is drawn from it.
+
 ### Specification space
 
 The 42 specifications are the crossing of three adjustment families with three risk windows:
 
-| Family | Varied arguments | Levels | n |
-|---|---|---|---|
-| PS matching | `caliper` ∈ {0.2, 0.0001} × `maxRatio` ∈ {1, 10} | 4 | 4 |
-| PS stratification | `numberOfStrata` ∈ {4, 5, 6, 7, 8, 9} | 6 | 6 |
-| IPTW | `trimFraction` ∈ {0, 0.01} × `maxWeight` ∈ {none, 10} | 4 | 4 |
-| | **Risk window** ∈ {30, 60, 90} days | 3 | ×3 |
-| | | | **42** |
+| Family | Varied arguments | n |
+|---|---|---|
+| PS matching | `caliper` ∈ {0.2, 0.0001} × `maxRatio` ∈ {1, 10} | 4 |
+| PS stratification | `numberOfStrata` ∈ {4, 5, 6, 7, 8, 9} | 6 |
+| IPTW | `trimFraction` ∈ {0, 0.01} × `maxWeight` ∈ {none, 10} | 4 |
+| | **Subtotal** | **14** |
+| | **Risk window** ∈ {30, 60, 90} days | ×3 |
+| | **Total** | **42** |
 
 Analysis IDs map as follows: 1–12 matching, 13–30 stratification, 31–42 weighting.
-Commented-out blocks at the end of `1_-_runMultiverseAnalysis.R` sketch ATE and ATO
-extensions that are not part of the current specification space.
 
 ## Repository contents
 
 ```
-1_-_runMultiverseAnalysis.R    Build the 42-specification Strategus analysis
-                               specification and execute it against Eunomia
-2_-_extractResults_visualize.R Parse the executed specifications back out of
-                               cm_analysis.csv, join to estimates, and draw
-                               the specification curve
+1 - runMultiverseAnalysis.R     Build the 42-specification Strategus analysis
+                                specification and execute it against Eunomia
+2 - extractResults_visualize.R  Parse the executed specifications back out,
+                                join them to the estimates, and draw the
+                                specification curve and volcano plot
+FUNS_multiverseOHDSI.R          Sourceable helpers behind script 2:
+                                readMultiverse(), inspectMultiverseSpec(),
+                                createSpecificationCurve(), createVolcanoPlot()
+renv.lock                       Pinned package versions (see Requirements)
 ```
 
-Execution writes to `resultsFolder/`, which is deleted and recreated on each run:
+Each execution writes to its own timestamped folder, so runs accumulate rather
+than overwrite:
 
 ```
-resultsFolder/
+runs/multiverse_<YYYYMMDD_HHMMSS>/
+├── analysisSpecification.json  Machine-readable declaration of the full
+│                               multiverse, written before execution begins;
+│                               the pre-registerable artifact
 ├── work_folder/
 └── results_folder/
     └── CohortMethodModule/
-        ├── cm_analysis.csv   One row per specification; `definition` holds
-        │                     the analysis as JSON
-        └── cm_result.csv     Effect estimates, CIs, p-values per analysis
+        ├── cm_analysis.csv     One row per specification; `definition` holds
+        │                       the analysis as JSON
+        └── cm_result.csv       Effect estimates, CIs, p-values per analysis
 ```
 
 ## Requirements
 
-R (4.4.1) with:
+R (4.4.1) with Strategus, CohortGenerator, CohortMethod, FeatureExtraction and Eunomia for
+execution, and ggplot2, jsonlite and patchwork for extraction and plotting.
 
 `renv` is used for dependency pinning; restore the recorded library with:
 
@@ -109,25 +121,35 @@ R (4.4.1) with:
 renv::restore()
 ```
 
-The cohort definitions are read from `testdata/` **inside the installed Strategus
-package** (`getCohortDefinitionSet(..., packageName = "Strategus")`), not from this
-repository, so no cohort JSON is vendored here.
-
 ## Running the analysis
 
 ```r
-source("1_-_runMultiverseAnalysis.R")    # builds and executes all 42 specifications
-source("2_-_extractResults_visualize.R") # extracts results and plots
+source("1 - runMultiverseAnalysis.R")     # builds and executes all 42 specifications
+# then set `resultsFolder` in the script below to the run folder just created
+source("2 - extractResults_visualize.R")  # extracts results and plots
 ```
 
 The first script downloads and instantiates the Eunomia CDM, creates the demo cohorts,
-and calls `Strategus::execute()`. Runtime is a few minutes on the demo data.
+writes `analysisSpecification.json`, and calls `Strategus::execute()`.
 
-The second script recovers the varied arguments by parsing the `definition` JSON column
-of `cm_analysis.csv` — the specifications are read back out of the executed artefacts
-rather than re-declared, so the plot cannot drift from what was actually run. Output is
-a two-panel specification curve: ranked estimates with 95% CIs on top, and the
-corresponding specification grid below, faceted by argument family.
+The second script recovers the varied arguments from the serialised `cmAnalysisList` —
+preferably `analysisSpecification.json`, falling back to the `definition` JSON column of
+`cm_analysis.csv` — rather than re-declaring them in the plotting code, so the dashboard
+cannot drift from the analysis list that was submitted. Because each run gets its own
+timestamped folder, the second script has to be pointed at the run you want:
+
+```r
+resultsFolder <- file.path(getwd(), "runs", "multiverse_<YYYYMMDD_HHMMSS>", "results_folder")
+```
+
+`mv$gridSource` records which file was used. `inspectMultiverseSpec()` then prints every
+argument that varies, its distinct values, and the distinct combinations realised, which is
+also the check that the executed multiverse is the size that was declared.
+
+Two visualisations are available: (1) a specification curve, with ranked estimates and 95%
+CIs on top and the corresponding specification grid below, and (2) a volcano plot showing
+−log10(p) against the estimate, coloured by PS adjustment family, with the 1st, 50th and
+99th percentiles of the estimate marked.
 
 ## Citation
 
