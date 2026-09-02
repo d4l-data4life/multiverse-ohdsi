@@ -68,7 +68,7 @@ spec_curve <- createSpecificationCurve(
     "Trim fraction"      = "trimByPsArgs.trimFraction",
     "Max weight"         = "truncateIptwArgs.maxWeight"
   ),
-  baseSize = 16
+  baseSize = 14
 )
 spec_curve
 

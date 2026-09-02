@@ -103,10 +103,7 @@ resultsFolder/
 
 ## Requirements
 
-R (≥ 4.2) with:
-
-- `Strategus`, `CohortGenerator`, `CohortMethod`, `FeatureExtraction`, `Eunomia`
-- `dplyr`, `ggplot2`, `patchwork`, `ggh4x`, `purrr`, `tibble`, `tidyr`, `jsonlite`, `glue`
+R (4.4.1) with:
 
 `renv` is used for dependency pinning; restore the recorded library with:
 

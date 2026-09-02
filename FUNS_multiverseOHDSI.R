@@ -449,7 +449,8 @@ createSpecificationCurve <- function(x, decisions = NULL, baseSize = 14) {
     ggplot2::labs(x = NULL, y = "Estimate") +
     .multiverseTheme(baseSize) +
     ggplot2::theme(axis.text.x  = ggplot2::element_blank(),
-                   axis.ticks.x = ggplot2::element_blank())
+                   axis.ticks.x = ggplot2::element_blank(),
+                   axis.text.y = element_text(size = baseSize - 4))
   
   long <- do.call(rbind, lapply(seq_along(dec$cols), function(i) {
     data.frame(rank = d$.rank, decision = dec$labels[i],
@@ -472,7 +473,7 @@ createSpecificationCurve <- function(x, decisions = NULL, baseSize = 14) {
                                                 size = baseSize)
     )
   
-  patchwork::wrap_plots(top, bottom, ncol = 1, heights = c(2, 3))
+  patchwork::wrap_plots(top, bottom, ncol = 1, heights = c(1.5, 3.5))
 }
 
 
