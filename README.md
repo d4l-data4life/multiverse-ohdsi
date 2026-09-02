@@ -57,7 +57,6 @@ For demo purposes we run it against the synthetic
 | **Data** | Eunomia GiBleed synthetic CDM |
 | **Estimand** | ATT |
 | **Outcome model** | Cox proportional hazards |
-| **Risk window** | Days 1–280, anchored on cohort start |
 
 Covariates for the two exposure ingredients (and their descendants) are excluded from
 the propensity model.
