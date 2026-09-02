@@ -18,7 +18,7 @@ whether an estimate may be unblinded (Conover et al., 2025).
 
 Harmonising the data and the tooling removes variability in the implementation of
 real-world evidence studies, and best practice settles many design questions. However, it does not
-settle all of them. How long a washout period should be, whether to match, stratify, or
+settle all of them. How long a risk window period should be, whether to match, stratify, or
 weight on the propensity score, how wide a caliper to set, how many strata to use, whether
 to trim or truncate extreme weights — guidance favours no single option, yet each can move
 the estimate. Multiverse analysis addresses precisely this (Steegen et al., 2016): instead
@@ -64,15 +64,14 @@ the propensity model.
 
 ### Specification space
 
-The 42 specifications are the crossing of three adjustment families with three washout
-periods:
+The 42 specifications are the crossing of three adjustment families with three risk windows:
 
 | Family | Varied arguments | Levels | n |
 |---|---|---|---|
 | PS matching | `caliper` ∈ {0.2, 0.0001} × `maxRatio` ∈ {1, 10} | 4 | 4 |
 | PS stratification | `numberOfStrata` ∈ {4, 5, 6, 7, 8, 9} | 6 | 6 |
 | IPTW | `trimFraction` ∈ {0, 0.01} × `maxWeight` ∈ {none, 10} | 4 | 4 |
-| | **Washout period** ∈ {0, 90, 180} days | 3 | ×3 |
+| | **Risk window** ∈ {30, 60, 90} days | 3 | ×3 |
 | | | | **42** |
 
 Analysis IDs map as follows: 1–12 matching, 13–30 stratification, 31–42 weighting.
